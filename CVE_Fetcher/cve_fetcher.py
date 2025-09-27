@@ -1,4 +1,4 @@
-```python
+
 import requests #library that allows to make HTTP requests - Python script talks to website or APIs
 import json, yaml
 import argparse
