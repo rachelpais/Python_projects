@@ -87,11 +87,11 @@ try:
         params["keywordSearch"] = args.keyword
 
     if args.pubStartDate:
-        start_date = datetime.fromisoformat(args.pubStartDate).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        start_date = f"{args.pubStartDate}T00:00:00.000Z" # Start of the day
         params["pubStartDate"] = start_date
 
     if args.pubEndDate:
-        end_date = datetime.fromisoformat(args.pubEndDate).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        end_date = f"{args.pubEndDate}T23:59:59.999Z"  # end of the day
         params["pubEndDate"] = end_date
 
     response = requests.get(url, params=params)    #fetches the URL with parameters
