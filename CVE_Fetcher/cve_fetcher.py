@@ -1,4 +1,3 @@
-
 import requests #library that allows to make HTTP requests - Python script talks to website or APIs
 import json, yaml
 import argparse
@@ -28,12 +27,12 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--since",
+    "--pubStartDate",
     help="Show CVEs published on or after this date (format: YYYY-MM-DD)"
 )
 
 parser.add_argument(
-    "--until",
+    "--pubEndDate",
     help="Show CVEs published on or before this date (format: YYYY-MM-DD)"
 )
 
@@ -63,6 +62,7 @@ parser.add_argument( #Add another argument called severity and only accepts 3 wo
 )
 
 args = parser.parse_args() # Reads user's input
+
 # --------------------------------------------------------
 # Defining colours
 # --------------------------------------------------------
@@ -75,62 +75,58 @@ END = "\033[0m" # Breaks the colour "loop"
 # start of the try loop
 # --------------------------------------------------------
 try:
-    response = requests.get(url)    #fetchs the URL
-    response.raise_for_status()     #Checks fot HTTP errors
+    # --------------------------------------------------------
+    # Build request parameters for NVD API
+    # --------------------------------------------------------
+    params = {}
+
+    if args.cve_id:
+        params["cveId"] = args.cve_id
+
+    if args.keyword:
+        params["keywordSearch"] = args.keyword
+
+    if args.pubStartDate:
+        start_date = datetime.fromisoformat(args.pubStartDate).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        params["pubStartDate"] = start_date
+
+    if args.pubEndDate:
+        end_date = datetime.fromisoformat(args.pubEndDate).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        params["pubEndDate"] = end_date
+
+    response = requests.get(url, params=params)    #fetches the URL with parameters
+    response.raise_for_status()     #Checks for HTTP errors
     data = response.json()          #parse JSON into a Python dictionary
-    print(data.keys())
+
     filtered_results ={} # store filtered cve
     count = 0 #counter for --limit
-# --------------------------------------------------------
-# In case you need one CVE for testing and cba to retype the code
-# --------------------------------------------------------
-    #Finding all the fields in one CVE - uncomment this section if you need to check the values of one cve
-    ##first_cve = data['vulnerabilities'][0]['cve']
-    ##print(json.dumps(first_cve, indent=4)) #converting the dictionary to a formatted and readable string.
 
-    for item in data ['vulnerabilities']: #loops through each item in vulnerabilities
+    for item in data.get('vulnerabilities', []): #loops through each item in vulnerabilities
         cve = item['cve']
 
-        #Filtering by CVE ID argument --cve-id
+        #Filtering by CVE ID (already handled in params, but keep in case of local filter)
         if args.cve_id and cve['id'] != args.cve_id:
             continue
 
         descriptions = cve['descriptions']
 
-        # Filtering by key word in description argument --keyword
+        # Filtering by key word in description (extra check in case API returns extras)
         if args.keyword:
-            #checks if the keyword exists in any english description
             if not any(args.keyword.lower() in desc['value'].lower() for desc in descriptions if desc['lang'] == 'en'):
                 continue
+
         print("\033[1m \nCVE ID:\033[0m", cve['id'])
-           #only CVEs with english descriptions containing the keyword will be processed. IF no keywords, it skips the cve
 
         #printing the descriptions
         for desc in descriptions:
-           if desc['lang'] =='en':
-               print(desc['value'])
-
-
-        #get the published date
-        published_date_str =item.get('published', '')
-        if published_date_str:
-            published_date =datetime.fromisoformat(published_date_str.replace("Z", "+00:00")) #"Z", "+00:00" - ensures utc parsing
-            #checks --since
-            if args.since:
-                since_date =datetime.fromisoformat(args.since)
-                if published_date < since_date:
-                    continue
-            #check -- until
-            if args.until:
-                until_date =datetime.fromisoformat(args.until)
-                if published_date > until_date:
-                    continue
+            if desc['lang'] =='en':
+                print(desc['value'])
 
         #printing the exploitabilityScore and baseSeverity.
-        metrics = cve.get('metrics', [])
-        for metrics in metrics.get('cvssMetricV2', []):
-            print("\n \033[1m Exploitability Score: \033[0m", metrics.get('exploitabilityScore'))
-            baseSeverity = metrics.get('baseSeverity')
+        metrics = cve.get('metrics', {})
+        for metric in metrics.get('cvssMetricV2', []):
+            print("\n \033[1m Exploitability Score: \033[0m", metric.get('exploitabilityScore'))
+            baseSeverity = metric.get('baseSeverity')
             if args.severity and args.severity != baseSeverity:
                 continue
 
@@ -144,30 +140,30 @@ try:
                 colour = END
             print(f"\033[1m  Base Severity: \033[0m{colour}{baseSeverity}{END}")
 
-            if metrics.get('obtainAllPrivilege') :
-                print("\033[1m  - Full System privilege obtainable: \033[0m", metrics.get('obtainAllPrivilege'))
-            if metrics.get('obtainUserPrivilege') :
-                print("\033[1m  - User privileges obtainable: \033[0m", metrics.get('obtainUserPrivilege'))
-            if metrics.get('obtainOtherPrivilege') :
-                print("\033[1m   - Other privileges obtainable: \033[0m", metrics.get('obtainOtherPrivilege'))
-            if metrics.get('userInteractionRequired') :
-                print("\033[1m   - User Interaction Required: \033[0m", metrics.get('userInteractionRequired'))
+            if metric.get('obtainAllPrivilege'):
+                print("\033[1m  - Full System privilege obtainable: \033[0m", metric.get('obtainAllPrivilege'))
+            if metric.get('obtainUserPrivilege'):
+                print("\033[1m  - User privileges obtainable: \033[0m", metric.get('obtainUserPrivilege'))
+            if metric.get('obtainOtherPrivilege'):
+                print("\033[1m   - Other privileges obtainable: \033[0m", metric.get('obtainOtherPrivilege'))
+            if metric.get('userInteractionRequired'):
+                print("\033[1m   - User Interaction Required: \033[0m", metric.get('userInteractionRequired'))
 
-                # printing the configurations (Key: CpeMatch)
-        for config in cve.get('configurations', []):  # loops through the configurations as a list
-            for node in config.get('nodes', []):  # loops through the nodes
-                for product in node.get('cpeMatch', []):  # same as above but in cpeMatch
-                    print("\033[1m  CPE:\033[0m", product['criteria'])  # prints the value of the criteria key for that product
+        # printing the configurations (Key: CpeMatch)
+        for config in cve.get('configurations', []):
+            for node in config.get('nodes', []):
+                for product in node.get('cpeMatch', []):
+                    print("\033[1m  CPE:\033[0m", product['criteria'])
 
         #if the CVE passes all filters, add it to the results list
-        filtered_results[cve['id']]= item
-        count+=1
+        filtered_results[cve['id']] = item
+        count += 1
 
         #stops if limit is reached
         if args.limit and count >= args.limit:
             break
 
-       #save filtered CVEs if -- output is provided
+    #save filtered CVEs if --output is provided
     if args.output:
         if args.format =="json":
             with open(args.output, "w", encoding="utf-8") as f:
@@ -178,6 +174,6 @@ try:
 
         print("-" *100)
         print("-" * 100)
+
 except requests.exceptions.RequestException as e:
     print ("Error: ", e)
-
